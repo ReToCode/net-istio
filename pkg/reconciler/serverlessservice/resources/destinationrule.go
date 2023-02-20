@@ -17,10 +17,9 @@ limitations under the License.
 package resources
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	istiov1alpha3 "istio.io/api/networking/v1alpha3"
 	"istio.io/client-go/pkg/apis/networking/v1alpha3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/networking/pkg/apis/networking/v1alpha1"
 	"knative.dev/pkg/kmeta"
 	pkgnetwork "knative.dev/pkg/network"
@@ -29,11 +28,17 @@ import (
 const (
 	subsetNormal = "normal"
 	subsetDirect = "direct"
+
+	// has to match config/700-istio-secret.yaml
+	knativeServingCertsSecret = "knative-serving-certs"
+
+	// has to match https://github.com/knative-sandbox/control-protocol/blob/main/pkg/certificates/constants.go#L21
+	knativeFakeDnsName = "data-plane.knative.dev"
 )
 
-// MakeDestinationRule creates a DestinationRule that defines a "normal" and a "direct"
+// MakeMeshAddressableDestinationRule creates a DestinationRule that defines a "normal" and a "direct"
 // loadbalancer for the service in question, to allow for pod addressability, even in mesh.
-func MakeDestinationRule(sks *v1alpha1.ServerlessService) *v1alpha3.DestinationRule {
+func MakeMeshAddressableDestinationRule(sks *v1alpha1.ServerlessService) *v1alpha3.DestinationRule {
 	ns := sks.Namespace
 	name := sks.Status.PrivateServiceName
 	host := pkgnetwork.GetServiceHostname(name, ns)
@@ -65,6 +70,32 @@ func MakeDestinationRule(sks *v1alpha1.ServerlessService) *v1alpha3.DestinationR
 					},
 				},
 			}},
+		},
+	}
+}
+
+// MakeInternalEncryptionDestinationRule creates a DestinationRule that enables upstream TLS
+// on the sks PrivateService host
+func MakeInternalEncryptionDestinationRule(sks *v1alpha1.ServerlessService) *v1alpha3.DestinationRule {
+	ns := sks.Namespace
+	name := sks.Status.ServiceName
+	host := pkgnetwork.GetServiceHostname(name, ns)
+
+	return &v1alpha3.DestinationRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            name,
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{*kmeta.NewControllerRef(sks)},
+		},
+		Spec: istiov1alpha3.DestinationRule{
+			Host: host,
+			TrafficPolicy: &istiov1alpha3.TrafficPolicy{
+				Tls: &istiov1alpha3.ClientTLSSettings{
+					Mode:            istiov1alpha3.ClientTLSSettings_SIMPLE,
+					CredentialName:  knativeServingCertsSecret,
+					SubjectAltNames: []string{knativeFakeDnsName},
+				},
+			},
 		},
 	}
 }

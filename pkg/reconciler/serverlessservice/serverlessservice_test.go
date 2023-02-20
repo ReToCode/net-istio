@@ -54,6 +54,7 @@ func sks(name string) *netv1alpha1.ServerlessService {
 			Name:      name,
 		},
 		Status: netv1alpha1.ServerlessServiceStatus{
+			ServiceName:        name + "-foo",
 			PrivateServiceName: name + "-foo",
 		},
 	}
@@ -68,11 +69,48 @@ func vs(name string) *istiov1alpha3.VirtualService {
 	return resources.MakeVirtualService(sks(name))
 }
 
-func dr(name string) *istiov1alpha3.DestinationRule {
-	return resources.MakeDestinationRule(sks(name))
+func meshAddressableDr(name string) *istiov1alpha3.DestinationRule {
+	return resources.MakeMeshAddressableDestinationRule(sks(name))
 }
 
-func TestReconcile(t *testing.T) {
+func internalEncryptionDr(name string) *istiov1alpha3.DestinationRule {
+	return resources.MakeInternalEncryptionDestinationRule(sks(name))
+}
+
+func TestReconcileInvalidConfig(t *testing.T) {
+	table := TableTest{{
+		Name: "invalid network configuration",
+		Key:  "testing/test",
+		Objects: []runtime.Object{
+			sks("test"),
+		},
+		WantErr: true,
+		WantEvents: []string{
+			Eventf(corev1.EventTypeWarning, "InternalError", "failed to reconcile VirtualService. EnableMeshPodAddressability and InternalEncryption cannot both be enabled"),
+		},
+	}}
+	table.Test(t, MakeFactory(func(ctx context.Context, listers *Listers, cmw configmap.Watcher) controller.Reconciler {
+		r := &reconciler{
+			istioclient:           istioclient.Get(ctx),
+			virtualServiceLister:  listers.GetVirtualServiceLister(),
+			destinationRuleLister: listers.GetDestinationRuleLister(),
+		}
+		return sksreconciler.NewReconciler(ctx, logging.FromContext(ctx), fakenetworkingclient.Get(ctx),
+			listers.GetServerlessServiceLister(), controller.GetEventRecorder(ctx), r, controller.Options{
+				ConfigStore: &testConfigStore{
+					config: &config.Config{
+						Istio: &config.Istio{},
+						Network: &netconfig.Config{
+							EnableMeshPodAddressability: true,
+							InternalEncryption:          true,
+						},
+					},
+				},
+			})
+	}))
+}
+
+func TestReconcileMeshAddressable(t *testing.T) {
 	table := TableTest{{
 		Name: "bad workqueue key",
 		Key:  "too/many/parts",
@@ -85,7 +123,7 @@ func TestReconcile(t *testing.T) {
 		Objects: []runtime.Object{
 			sks("test"),
 			vs("test"),
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		CmpOpts: defaultCmpOpts,
 	}, {
@@ -96,7 +134,7 @@ func TestReconcile(t *testing.T) {
 		},
 		WantCreates: []runtime.Object{
 			vs("test"),
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		WantEvents: []string{
 			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "test-foo"),
@@ -108,7 +146,7 @@ func TestReconcile(t *testing.T) {
 		Key:  "testing/test",
 		Objects: []runtime.Object{
 			sks("test"),
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		WantCreates: []runtime.Object{
 			vs("test"),
@@ -125,7 +163,7 @@ func TestReconcile(t *testing.T) {
 			vs("test"),
 		},
 		WantCreates: []runtime.Object{
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		WantEvents: []string{
 			Eventf(corev1.EventTypeNormal, "Created", "Created DestinationRule %q", "test-foo"),
@@ -142,7 +180,7 @@ func TestReconcile(t *testing.T) {
 				return virtualService
 			}(),
 			func() *istiov1alpha3.DestinationRule {
-				destinationRule := dr("test")
+				destinationRule := meshAddressableDr("test")
 				destinationRule.Spec.Host = "foo"
 				return destinationRule
 			}(),
@@ -150,7 +188,7 @@ func TestReconcile(t *testing.T) {
 		WantUpdates: []clientgotesting.UpdateActionImpl{{
 			Object: vs("test"),
 		}, {
-			Object: dr("test"),
+			Object: meshAddressableDr("test"),
 		}},
 		WantEvents: []string{
 			Eventf(corev1.EventTypeNormal, "Updated", "Updated VirtualService %s", "testing/test-foo"),
@@ -166,7 +204,7 @@ func TestReconcile(t *testing.T) {
 		},
 		Objects: []runtime.Object{
 			sks("test"),
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		WantCreates: []runtime.Object{
 			vs("test"),
@@ -188,7 +226,7 @@ func TestReconcile(t *testing.T) {
 			vs("test"),
 		},
 		WantCreates: []runtime.Object{
-			dr("test"),
+			meshAddressableDr("test"),
 		},
 		WantEvents: []string{
 			Eventf(corev1.EventTypeWarning, "CreationFailed", "Failed to create DestinationRule %s: inducing failure for create destinationrules", "testing/test-foo"),
@@ -210,6 +248,92 @@ func TestReconcile(t *testing.T) {
 						Istio: &config.Istio{},
 						Network: &netconfig.Config{
 							EnableMeshPodAddressability: true,
+						},
+					},
+				},
+			})
+	}))
+}
+
+func TestReconcileInternalEncryption(t *testing.T) {
+	table := TableTest{{
+		Name: "bad workqueue key",
+		Key:  "too/many/parts",
+	}, {
+		Name: "key not found",
+		Key:  "foo/not-found",
+	}, {
+		Name: "stable state",
+		Key:  "testing/test",
+		Objects: []runtime.Object{
+			sks("test"),
+			internalEncryptionDr("test"),
+		},
+		CmpOpts: defaultCmpOpts,
+	}, {
+		Name: "create DestinationRule",
+		Key:  "testing/test",
+		Objects: []runtime.Object{
+			sks("test"),
+		},
+		WantCreates: []runtime.Object{
+			internalEncryptionDr("test"),
+		},
+		WantEvents: []string{
+			Eventf(corev1.EventTypeNormal, "Created", "Created DestinationRule %q", "test-foo"),
+		},
+		CmpOpts: defaultCmpOpts,
+	}, {
+		Name: "fix DestinationRule",
+		Key:  "testing/test",
+		Objects: []runtime.Object{
+			sks("test"),
+			func() *istiov1alpha3.DestinationRule {
+				destinationRule := internalEncryptionDr("test")
+				destinationRule.Spec.Host = "foo"
+				return destinationRule
+			}(),
+		},
+		WantUpdates: []clientgotesting.UpdateActionImpl{{
+			Object: internalEncryptionDr("test"),
+		}},
+		WantEvents: []string{
+			Eventf(corev1.EventTypeNormal, "Updated", "Updated DestinationRule %s", "testing/test-foo"),
+		},
+		CmpOpts: defaultCmpOpts,
+	}, {
+		Name:    "failure for DestinationRule",
+		Key:     "testing/test",
+		WantErr: true,
+		WithReactors: []clientgotesting.ReactionFunc{
+			InduceFailure("create", "destinationrules"),
+		},
+		Objects: []runtime.Object{
+			sks("test"),
+		},
+		WantCreates: []runtime.Object{
+			internalEncryptionDr("test"),
+		},
+		WantEvents: []string{
+			Eventf(corev1.EventTypeWarning, "CreationFailed", "Failed to create DestinationRule %s: inducing failure for create destinationrules", "testing/test-foo"),
+			Eventf(corev1.EventTypeWarning, "InternalError", "failed to reconcile DestinationRule: failed to create DestinationRule: inducing failure for create destinationrules"),
+		},
+		CmpOpts: defaultCmpOpts,
+	}}
+	table.Test(t, MakeFactory(func(ctx context.Context, listers *Listers, cmw configmap.Watcher) controller.Reconciler {
+		r := &reconciler{
+			istioclient:           istioclient.Get(ctx),
+			virtualServiceLister:  listers.GetVirtualServiceLister(),
+			destinationRuleLister: listers.GetDestinationRuleLister(),
+		}
+
+		return sksreconciler.NewReconciler(ctx, logging.FromContext(ctx), fakenetworkingclient.Get(ctx),
+			listers.GetServerlessServiceLister(), controller.GetEventRecorder(ctx), r, controller.Options{
+				ConfigStore: &testConfigStore{
+					config: &config.Config{
+						Istio: &config.Istio{},
+						Network: &netconfig.Config{
+							InternalEncryption: true,
 						},
 					},
 				},

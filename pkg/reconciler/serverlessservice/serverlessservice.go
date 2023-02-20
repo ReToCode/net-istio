@@ -18,6 +18,7 @@ package serverlessservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	istioclientset "knative.dev/net-istio/pkg/client/istio/clientset/versioned"
@@ -48,9 +49,14 @@ var (
 
 // Reconcile compares the actual state with the desired, and attempts to converge the two.
 func (r *reconciler) ReconcileKind(ctx context.Context, sks *netv1alpha1.ServerlessService) pkgreconciler.Event {
-	if !config.FromContext(ctx).Network.EnableMeshPodAddressability {
+	networkCfg := config.FromContext(ctx).Network
+	if !networkCfg.EnableMeshPodAddressability && !networkCfg.InternalEncryption {
 		// Just ignore if we're disabled.
 		return nil
+	}
+
+	if networkCfg.EnableMeshPodAddressability && networkCfg.InternalEncryption {
+		return errors.New("failed to reconcile VirtualService. EnableMeshPodAddressability and InternalEncryption cannot both be enabled")
 	}
 
 	if sks.Status.PrivateServiceName == "" {
@@ -58,14 +64,23 @@ func (r *reconciler) ReconcileKind(ctx context.Context, sks *netv1alpha1.Serverl
 		return nil
 	}
 
-	vs := resources.MakeVirtualService(sks)
-	if _, err := istioaccessor.ReconcileVirtualService(ctx, sks, vs, r); err != nil {
-		return fmt.Errorf("failed to reconcile VirtualService: %w", err)
+	if networkCfg.EnableMeshPodAddressability {
+		vs := resources.MakeVirtualService(sks)
+		if _, err := istioaccessor.ReconcileVirtualService(ctx, sks, vs, r); err != nil {
+			return fmt.Errorf("failed to reconcile VirtualService: %w", err)
+		}
+
+		dr := resources.MakeMeshAddressableDestinationRule(sks)
+		if _, err := istioaccessor.ReconcileDestinationRule(ctx, sks, dr, r); err != nil {
+			return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+		}
 	}
 
-	dr := resources.MakeDestinationRule(sks)
-	if _, err := istioaccessor.ReconcileDestinationRule(ctx, sks, dr, r); err != nil {
-		return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+	if networkCfg.InternalEncryption {
+		dr := resources.MakeInternalEncryptionDestinationRule(sks)
+		if _, err := istioaccessor.ReconcileDestinationRule(ctx, sks, dr, r); err != nil {
+			return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+		}
 	}
 
 	return nil
