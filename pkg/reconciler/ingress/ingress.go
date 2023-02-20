@@ -68,11 +68,12 @@ const (
 type Reconciler struct {
 	kubeclient kubernetes.Interface
 
-	istioClientSet       istioclientset.Interface
-	virtualServiceLister istiolisters.VirtualServiceLister
-	gatewayLister        istiolisters.GatewayLister
-	secretLister         corev1listers.SecretLister
-	svcLister            corev1listers.ServiceLister
+	istioClientSet        istioclientset.Interface
+	virtualServiceLister  istiolisters.VirtualServiceLister
+	destinationRuleLister istiolisters.DestinationRuleLister
+	gatewayLister         istiolisters.GatewayLister
+	secretLister          corev1listers.SecretLister
+	svcLister             corev1listers.ServiceLister
 
 	tracker tracker.Interface
 
@@ -80,10 +81,11 @@ type Reconciler struct {
 }
 
 var (
-	_ ingressreconciler.Interface          = (*Reconciler)(nil)
-	_ ingressreconciler.Finalizer          = (*Reconciler)(nil)
-	_ coreaccessor.SecretAccessor          = (*Reconciler)(nil)
-	_ istioaccessor.VirtualServiceAccessor = (*Reconciler)(nil)
+	_ ingressreconciler.Interface           = (*Reconciler)(nil)
+	_ ingressreconciler.Finalizer           = (*Reconciler)(nil)
+	_ coreaccessor.SecretAccessor           = (*Reconciler)(nil)
+	_ istioaccessor.VirtualServiceAccessor  = (*Reconciler)(nil)
+	_ istioaccessor.DestinationRuleAccessor = (*Reconciler)(nil)
 )
 
 // ReconcileKind compares the actual state with the desired, and attempts to
@@ -197,6 +199,14 @@ func (r *Reconciler) reconcileIngress(ctx context.Context, ing *v1alpha1.Ingress
 	if err := r.reconcileVirtualServices(ctx, ing, vses); err != nil {
 		ing.Status.MarkLoadBalancerFailed(virtualServiceNotReconciled, err.Error())
 		return err
+	}
+
+	if config.FromContext(ctx).Network.InternalEncryption {
+		logger.Info("Creating/Updating DestinationRules for internal-encryption")
+		err = r.reconcileDestinationRules(ctx, ing)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Update status
@@ -359,6 +369,40 @@ func (r *Reconciler) reconcileVirtualServices(ctx context.Context, ing *v1alpha1
 	return nil
 }
 
+func (r *Reconciler) reconcileDestinationRules(ctx context.Context, ing *v1alpha1.Ingress) error {
+	for _, rule := range ing.Spec.Rules {
+		for _, path := range rule.HTTP.Paths {
+			// Currently DomainMappings point to the cluster local domain on the local gateway.
+			// As there is no encryption there yet (https://github.com/knative/serving/issues/13472),
+			// we cannot use upstream TLS here, so we need to skip it for DomainMappings
+			if path.RewriteHost != "" {
+				continue
+			}
+
+			for _, split := range path.Splits {
+				svc, err := r.svcLister.Services(split.ServiceNamespace).Get(split.ServiceName)
+				if err != nil {
+					return fmt.Errorf("failed to get service: %w", err)
+				}
+
+				http2 := false
+				for _, port := range svc.Spec.Ports {
+					if port.Name == "http2" || port.Name == "h2c" {
+						http2 = true
+					}
+				}
+
+				dr := resources.MakeInternalEncryptionDestinationRule(ing, split, http2)
+				if _, err := istioaccessor.ReconcileDestinationRule(ctx, ing, dr, r); err != nil {
+					return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 func (r *Reconciler) FinalizeKind(ctx context.Context, ing *v1alpha1.Ingress) pkgreconciler.Event {
 	logger := logging.FromContext(ctx)
 	istiocfg := config.FromContext(ctx).Istio
@@ -447,6 +491,10 @@ func (r *Reconciler) GetIstioClient() istioclientset.Interface {
 // GetVirtualServiceLister returns the lister for VirtualService.
 func (r *Reconciler) GetVirtualServiceLister() istiolisters.VirtualServiceLister {
 	return r.virtualServiceLister
+}
+
+func (r *Reconciler) GetDestinationRuleLister() istiolisters.DestinationRuleLister {
+	return r.destinationRuleLister
 }
 
 // qualifiedGatewayNamesFromContext get gateway names from context
