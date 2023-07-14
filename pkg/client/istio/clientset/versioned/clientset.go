@@ -26,11 +26,13 @@ import (
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
 	networkingv1alpha3 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/networking/v1alpha3"
+	securityv1beta1 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/security/v1beta1"
 )
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	NetworkingV1alpha3() networkingv1alpha3.NetworkingV1alpha3Interface
+	SecurityV1beta1() securityv1beta1.SecurityV1beta1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -38,11 +40,17 @@ type Interface interface {
 type Clientset struct {
 	*discovery.DiscoveryClient
 	networkingV1alpha3 *networkingv1alpha3.NetworkingV1alpha3Client
+	securityV1beta1    *securityv1beta1.SecurityV1beta1Client
 }
 
 // NetworkingV1alpha3 retrieves the NetworkingV1alpha3Client
 func (c *Clientset) NetworkingV1alpha3() networkingv1alpha3.NetworkingV1alpha3Interface {
 	return c.networkingV1alpha3
+}
+
+// SecurityV1beta1 retrieves the SecurityV1beta1Client
+func (c *Clientset) SecurityV1beta1() securityv1beta1.SecurityV1beta1Interface {
+	return c.securityV1beta1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -93,6 +101,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
+	cs.securityV1beta1, err = securityv1beta1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
@@ -115,6 +127,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.networkingV1alpha3 = networkingv1alpha3.New(c)
+	cs.securityV1beta1 = securityv1beta1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

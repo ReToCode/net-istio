@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	v1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
+	v1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -69,6 +70,14 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Networking().V1alpha3().WorkloadEntries().Informer()}, nil
 	case v1alpha3.SchemeGroupVersion.WithResource("workloadgroups"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Networking().V1alpha3().WorkloadGroups().Informer()}, nil
+
+		// Group=security.istio.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithResource("authorizationpolicies"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Security().V1beta1().AuthorizationPolicies().Informer()}, nil
+	case v1beta1.SchemeGroupVersion.WithResource("peerauthentications"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Security().V1beta1().PeerAuthentications().Informer()}, nil
+	case v1beta1.SchemeGroupVersion.WithResource("requestauthentications"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Security().V1beta1().RequestAuthentications().Informer()}, nil
 
 	}
 

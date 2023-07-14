@@ -25,6 +25,7 @@ import (
 	fmt "fmt"
 
 	v1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
+	v1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,7 @@ import (
 	rest "k8s.io/client-go/rest"
 	versioned "knative.dev/net-istio/pkg/client/istio/clientset/versioned"
 	typednetworkingv1alpha3 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/networking/v1alpha3"
+	typedsecurityv1beta1 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/security/v1beta1"
 	injection "knative.dev/pkg/injection"
 	dynamicclient "knative.dev/pkg/injection/clients/dynamicclient"
 	logging "knative.dev/pkg/logging"
@@ -1156,5 +1158,413 @@ func (w *wrapNetworkingV1alpha3WorkloadGroupImpl) UpdateStatus(ctx context.Conte
 }
 
 func (w *wrapNetworkingV1alpha3WorkloadGroupImpl) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+	return nil, errors.New("NYI: Watch")
+}
+
+// SecurityV1beta1 retrieves the SecurityV1beta1Client
+func (w *wrapClient) SecurityV1beta1() typedsecurityv1beta1.SecurityV1beta1Interface {
+	return &wrapSecurityV1beta1{
+		dyn: w.dyn,
+	}
+}
+
+type wrapSecurityV1beta1 struct {
+	dyn dynamic.Interface
+}
+
+func (w *wrapSecurityV1beta1) RESTClient() rest.Interface {
+	panic("RESTClient called on dynamic client!")
+}
+
+func (w *wrapSecurityV1beta1) AuthorizationPolicies(namespace string) typedsecurityv1beta1.AuthorizationPolicyInterface {
+	return &wrapSecurityV1beta1AuthorizationPolicyImpl{
+		dyn: w.dyn.Resource(schema.GroupVersionResource{
+			Group:    "security.istio.io",
+			Version:  "v1beta1",
+			Resource: "authorizationpolicies",
+		}),
+
+		namespace: namespace,
+	}
+}
+
+type wrapSecurityV1beta1AuthorizationPolicyImpl struct {
+	dyn dynamic.NamespaceableResourceInterface
+
+	namespace string
+}
+
+var _ typedsecurityv1beta1.AuthorizationPolicyInterface = (*wrapSecurityV1beta1AuthorizationPolicyImpl)(nil)
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Create(ctx context.Context, in *v1beta1.AuthorizationPolicy, opts v1.CreateOptions) (*v1beta1.AuthorizationPolicy, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "AuthorizationPolicy",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Create(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicy{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+	return w.dyn.Namespace(w.namespace).Delete(ctx, name, opts)
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	return w.dyn.Namespace(w.namespace).DeleteCollection(ctx, opts, listOpts)
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.AuthorizationPolicy, error) {
+	uo, err := w.dyn.Namespace(w.namespace).Get(ctx, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicy{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) List(ctx context.Context, opts v1.ListOptions) (*v1beta1.AuthorizationPolicyList, error) {
+	uo, err := w.dyn.Namespace(w.namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicyList{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.AuthorizationPolicy, err error) {
+	uo, err := w.dyn.Namespace(w.namespace).Patch(ctx, name, pt, data, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicy{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Update(ctx context.Context, in *v1beta1.AuthorizationPolicy, opts v1.UpdateOptions) (*v1beta1.AuthorizationPolicy, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "AuthorizationPolicy",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Update(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicy{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) UpdateStatus(ctx context.Context, in *v1beta1.AuthorizationPolicy, opts v1.UpdateOptions) (*v1beta1.AuthorizationPolicy, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "AuthorizationPolicy",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).UpdateStatus(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.AuthorizationPolicy{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1AuthorizationPolicyImpl) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+	return nil, errors.New("NYI: Watch")
+}
+
+func (w *wrapSecurityV1beta1) PeerAuthentications(namespace string) typedsecurityv1beta1.PeerAuthenticationInterface {
+	return &wrapSecurityV1beta1PeerAuthenticationImpl{
+		dyn: w.dyn.Resource(schema.GroupVersionResource{
+			Group:    "security.istio.io",
+			Version:  "v1beta1",
+			Resource: "peerauthentications",
+		}),
+
+		namespace: namespace,
+	}
+}
+
+type wrapSecurityV1beta1PeerAuthenticationImpl struct {
+	dyn dynamic.NamespaceableResourceInterface
+
+	namespace string
+}
+
+var _ typedsecurityv1beta1.PeerAuthenticationInterface = (*wrapSecurityV1beta1PeerAuthenticationImpl)(nil)
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Create(ctx context.Context, in *v1beta1.PeerAuthentication, opts v1.CreateOptions) (*v1beta1.PeerAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "PeerAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Create(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+	return w.dyn.Namespace(w.namespace).Delete(ctx, name, opts)
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	return w.dyn.Namespace(w.namespace).DeleteCollection(ctx, opts, listOpts)
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.PeerAuthentication, error) {
+	uo, err := w.dyn.Namespace(w.namespace).Get(ctx, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) List(ctx context.Context, opts v1.ListOptions) (*v1beta1.PeerAuthenticationList, error) {
+	uo, err := w.dyn.Namespace(w.namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthenticationList{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.PeerAuthentication, err error) {
+	uo, err := w.dyn.Namespace(w.namespace).Patch(ctx, name, pt, data, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Update(ctx context.Context, in *v1beta1.PeerAuthentication, opts v1.UpdateOptions) (*v1beta1.PeerAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "PeerAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Update(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) UpdateStatus(ctx context.Context, in *v1beta1.PeerAuthentication, opts v1.UpdateOptions) (*v1beta1.PeerAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "PeerAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).UpdateStatus(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.PeerAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1PeerAuthenticationImpl) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+	return nil, errors.New("NYI: Watch")
+}
+
+func (w *wrapSecurityV1beta1) RequestAuthentications(namespace string) typedsecurityv1beta1.RequestAuthenticationInterface {
+	return &wrapSecurityV1beta1RequestAuthenticationImpl{
+		dyn: w.dyn.Resource(schema.GroupVersionResource{
+			Group:    "security.istio.io",
+			Version:  "v1beta1",
+			Resource: "requestauthentications",
+		}),
+
+		namespace: namespace,
+	}
+}
+
+type wrapSecurityV1beta1RequestAuthenticationImpl struct {
+	dyn dynamic.NamespaceableResourceInterface
+
+	namespace string
+}
+
+var _ typedsecurityv1beta1.RequestAuthenticationInterface = (*wrapSecurityV1beta1RequestAuthenticationImpl)(nil)
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Create(ctx context.Context, in *v1beta1.RequestAuthentication, opts v1.CreateOptions) (*v1beta1.RequestAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "RequestAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Create(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+	return w.dyn.Namespace(w.namespace).Delete(ctx, name, opts)
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	return w.dyn.Namespace(w.namespace).DeleteCollection(ctx, opts, listOpts)
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.RequestAuthentication, error) {
+	uo, err := w.dyn.Namespace(w.namespace).Get(ctx, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) List(ctx context.Context, opts v1.ListOptions) (*v1beta1.RequestAuthenticationList, error) {
+	uo, err := w.dyn.Namespace(w.namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthenticationList{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.RequestAuthentication, err error) {
+	uo, err := w.dyn.Namespace(w.namespace).Patch(ctx, name, pt, data, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Update(ctx context.Context, in *v1beta1.RequestAuthentication, opts v1.UpdateOptions) (*v1beta1.RequestAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "RequestAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).Update(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) UpdateStatus(ctx context.Context, in *v1beta1.RequestAuthentication, opts v1.UpdateOptions) (*v1beta1.RequestAuthentication, error) {
+	in.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "security.istio.io",
+		Version: "v1beta1",
+		Kind:    "RequestAuthentication",
+	})
+	uo := &unstructured.Unstructured{}
+	if err := convert(in, uo); err != nil {
+		return nil, err
+	}
+	uo, err := w.dyn.Namespace(w.namespace).UpdateStatus(ctx, uo, opts)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1beta1.RequestAuthentication{}
+	if err := convert(uo, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (w *wrapSecurityV1beta1RequestAuthenticationImpl) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return nil, errors.New("NYI: Watch")
 }

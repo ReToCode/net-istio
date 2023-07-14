@@ -30,6 +30,7 @@ import (
 	versioned "knative.dev/net-istio/pkg/client/istio/clientset/versioned"
 	internalinterfaces "knative.dev/net-istio/pkg/client/istio/informers/externalversions/internalinterfaces"
 	networking "knative.dev/net-istio/pkg/client/istio/informers/externalversions/networking"
+	security "knative.dev/net-istio/pkg/client/istio/informers/externalversions/security"
 )
 
 // SharedInformerOption defines the functional option type for SharedInformerFactory.
@@ -173,8 +174,13 @@ type SharedInformerFactory interface {
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
 	Networking() networking.Interface
+	Security() security.Interface
 }
 
 func (f *sharedInformerFactory) Networking() networking.Interface {
 	return networking.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Security() security.Interface {
+	return security.New(f, f.namespace, f.tweakListOptions)
 }

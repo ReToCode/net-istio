@@ -23,10 +23,12 @@ import (
 	istioclient "knative.dev/net-istio/pkg/client/istio/injection/client"
 	destinationruleinformer "knative.dev/net-istio/pkg/client/istio/injection/informers/networking/v1alpha3/destinationrule"
 	virtualserviceinformer "knative.dev/net-istio/pkg/client/istio/injection/informers/networking/v1alpha3/virtualservice"
+	peerauthenticationinformer "knative.dev/net-istio/pkg/client/istio/injection/informers/security/v1beta1/peerauthentication"
 	"knative.dev/net-istio/pkg/reconciler/ingress/config"
 	netv1alpha1 "knative.dev/networking/pkg/apis/networking/v1alpha1"
 	sksinformer "knative.dev/networking/pkg/client/injection/informers/networking/v1alpha1/serverlessservice"
 	sksreconciler "knative.dev/networking/pkg/client/injection/reconciler/networking/v1alpha1/serverlessservice"
+	serviceinformer "knative.dev/pkg/client/injection/kube/informers/core/v1/service"
 	"knative.dev/pkg/configmap"
 	"knative.dev/pkg/controller"
 	"knative.dev/pkg/logging"
@@ -43,11 +45,15 @@ func NewController(
 	sksInformer := sksinformer.Get(ctx)
 	virtualServiceInformer := virtualserviceinformer.Get(ctx)
 	destinationRuleInformer := destinationruleinformer.Get(ctx)
+	peerAuthenticationInformer := peerauthenticationinformer.Get(ctx)
+	serviceInformer := serviceinformer.Get(ctx)
 
 	c := &reconciler{
-		istioclient:           istioclient.Get(ctx),
-		virtualServiceLister:  virtualServiceInformer.Lister(),
-		destinationRuleLister: destinationRuleInformer.Lister(),
+		istioclient:              istioclient.Get(ctx),
+		virtualServiceLister:     virtualServiceInformer.Lister(),
+		destinationRuleLister:    destinationRuleInformer.Lister(),
+		peerAuthenticationLister: peerAuthenticationInformer.Lister(),
+		svcLister:                serviceInformer.Lister(),
 	}
 	impl := sksreconciler.NewImpl(ctx, c, func(impl *controller.Impl) controller.Options {
 		resync := configmap.TypeFilter(&config.Istio{})(func(string, interface{}) {

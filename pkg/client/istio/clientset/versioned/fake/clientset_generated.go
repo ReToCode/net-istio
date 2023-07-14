@@ -27,6 +27,8 @@ import (
 	clientset "knative.dev/net-istio/pkg/client/istio/clientset/versioned"
 	networkingv1alpha3 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/networking/v1alpha3"
 	fakenetworkingv1alpha3 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/networking/v1alpha3/fake"
+	securityv1beta1 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/security/v1beta1"
+	fakesecurityv1beta1 "knative.dev/net-istio/pkg/client/istio/clientset/versioned/typed/security/v1beta1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -82,4 +84,9 @@ var (
 // NetworkingV1alpha3 retrieves the NetworkingV1alpha3Client
 func (c *Clientset) NetworkingV1alpha3() networkingv1alpha3.NetworkingV1alpha3Interface {
 	return &fakenetworkingv1alpha3.FakeNetworkingV1alpha3{Fake: &c.Fake}
+}
+
+// SecurityV1beta1 retrieves the SecurityV1beta1Client
+func (c *Clientset) SecurityV1beta1() securityv1beta1.SecurityV1beta1Interface {
+	return &fakesecurityv1beta1.FakeSecurityV1beta1{Fake: &c.Fake}
 }

@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	istioclientset "knative.dev/net-istio/pkg/client/istio/clientset/versioned"
 	istiolisters "knative.dev/net-istio/pkg/client/istio/listers/networking/v1alpha3"
+	istiosecuritylisters "knative.dev/net-istio/pkg/client/istio/listers/security/v1beta1"
 	"knative.dev/net-istio/pkg/reconciler/ingress/config"
 	sksreconciler "knative.dev/networking/pkg/client/injection/reconciler/networking/v1alpha1/serverlessservice"
+	"knative.dev/pkg/logging"
 
 	istioaccessor "knative.dev/net-istio/pkg/reconciler/accessor/istio"
 	"knative.dev/net-istio/pkg/reconciler/serverlessservice/resources"
@@ -35,37 +38,50 @@ import (
 type reconciler struct {
 	istioclient istioclientset.Interface
 
-	virtualServiceLister  istiolisters.VirtualServiceLister
-	destinationRuleLister istiolisters.DestinationRuleLister
+	virtualServiceLister     istiolisters.VirtualServiceLister
+	destinationRuleLister    istiolisters.DestinationRuleLister
+	peerAuthenticationLister istiosecuritylisters.PeerAuthenticationLister
+
+	svcLister corev1listers.ServiceLister
 }
 
 // Check that our Reconciler implements various interfaces.
 var (
-	_ sksreconciler.Interface               = (*reconciler)(nil)
-	_ istioaccessor.VirtualServiceAccessor  = (*reconciler)(nil)
-	_ istioaccessor.DestinationRuleAccessor = (*reconciler)(nil)
+	_ sksreconciler.Interface                  = (*reconciler)(nil)
+	_ istioaccessor.VirtualServiceAccessor     = (*reconciler)(nil)
+	_ istioaccessor.DestinationRuleAccessor    = (*reconciler)(nil)
+	_ istioaccessor.PeerAuthenticationAccessor = (*reconciler)(nil)
 )
 
 // Reconcile compares the actual state with the desired, and attempts to converge the two.
 func (r *reconciler) ReconcileKind(ctx context.Context, sks *netv1alpha1.ServerlessService) pkgreconciler.Event {
-	if !config.FromContext(ctx).Network.EnableMeshPodAddressability {
-		// Just ignore if we're disabled.
-		return nil
-	}
+	logger := logging.FromContext(ctx)
 
 	if sks.Status.PrivateServiceName == "" {
 		// No private service yet, nothing to do here.
 		return nil
 	}
 
-	vs := resources.MakeVirtualService(sks)
-	if _, err := istioaccessor.ReconcileVirtualService(ctx, sks, vs, r); err != nil {
-		return fmt.Errorf("failed to reconcile VirtualService: %w", err)
+	logger.Info("Creating/Updating PeerAuthentication to allow draining")
+	pa, err := resources.MakeAllowDrainPeerAuthentication(sks, r.svcLister)
+	if err != nil {
+		return fmt.Errorf("failed to create PeerAuthentication: %w", err)
 	}
 
-	dr := resources.MakeDestinationRule(sks)
-	if _, err := istioaccessor.ReconcileDestinationRule(ctx, sks, dr, r); err != nil {
-		return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+	if _, err := istioaccessor.ReconcilePeerAuthentication(ctx, sks, pa, r); err != nil {
+		return fmt.Errorf("failed to reconcile PeerAuthentication: %w", err)
+	}
+
+	if config.FromContext(ctx).Network.EnableMeshPodAddressability {
+		vs := resources.MakeVirtualService(sks)
+		if _, err := istioaccessor.ReconcileVirtualService(ctx, sks, vs, r); err != nil {
+			return fmt.Errorf("failed to reconcile VirtualService: %w", err)
+		}
+
+		dr := resources.MakeDestinationRule(sks)
+		if _, err := istioaccessor.ReconcileDestinationRule(ctx, sks, dr, r); err != nil {
+			return fmt.Errorf("failed to reconcile DestinationRule: %w", err)
+		}
 	}
 
 	return nil
@@ -81,4 +97,8 @@ func (r *reconciler) GetVirtualServiceLister() istiolisters.VirtualServiceLister
 
 func (r *reconciler) GetDestinationRuleLister() istiolisters.DestinationRuleLister {
 	return r.destinationRuleLister
+}
+
+func (r *reconciler) GetPeerAuthenticationLister() istiosecuritylisters.PeerAuthenticationLister {
+	return r.peerAuthenticationLister
 }
